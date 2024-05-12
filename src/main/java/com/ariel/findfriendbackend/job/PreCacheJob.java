@@ -1,6 +1,5 @@
 package com.ariel.findfriendbackend.job;
 
-import com.ariel.findfriendbackend.mapper.UserMapper;
 import com.ariel.findfriendbackend.model.domain.User;
 import com.ariel.findfriendbackend.service.UserService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -35,7 +34,7 @@ public class PreCacheJob {
     private RedissonClient redissonClient;
 
     /**
-     * 重点用户
+     * 重点用户，只设置一个用户
      */
     private List<Long> mainUserList = Arrays.asList(1L);
 
