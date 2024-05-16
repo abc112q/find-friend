@@ -8,7 +8,7 @@ import java.io.Serializable;
 
 /**
  * 用户登录请求体
- *
+ *也是dto的一种，只作为请求参数
  * @author Ariel
  */
 @Data

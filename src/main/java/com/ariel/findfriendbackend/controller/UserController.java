@@ -7,9 +7,9 @@ import com.ariel.findfriendbackend.exception.BusinessException;
 import com.ariel.findfriendbackend.model.domain.User;
 import com.ariel.findfriendbackend.model.request.UserLoginRequest;
 import com.ariel.findfriendbackend.model.request.UserRegisterRequest;
+import com.ariel.findfriendbackend.model.vo.TagVo;
 import com.ariel.findfriendbackend.service.UserService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -17,14 +17,13 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.util.CollectionUtils;
 import org.springframework.web.bind.annotation.*;
+
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.function.ToDoubleBiFunction;
 import java.util.stream.Collectors;
 
-import static com.ariel.findfriendbackend.contant.UserConstant.ADMIN_ROLE;
 import static com.ariel.findfriendbackend.contant.UserConstant.USER_LOGIN_STATE;
 
 
@@ -34,7 +33,7 @@ import static com.ariel.findfriendbackend.contant.UserConstant.USER_LOGIN_STATE;
  */
 @RestController
 @RequestMapping("/user")
-@CrossOrigin(origins = {"http://localhost:3000"})
+@CrossOrigin(origins = {"http://localhost:3000/"})
 @Slf4j
 public class UserController {
 
@@ -165,5 +164,17 @@ public class UserController {
        return ResultUtils.success(result);
    }
 
+    /**
+     * 获得用户最常见的标签，推荐标签
+      * @param currentId
+     * @param request
+     * @return
+     */
+   @GetMapping("/get/tags")
+    public BaseResponse<TagVo> getTags(String currentId, HttpServletRequest request) {
+        TagVo tagVo = userService.getTags(currentId,request);
+        log.info(tagVo.toString());
+        return ResultUtils.success(tagVo);
+    }
 
 }

@@ -1,6 +1,9 @@
 package com.ariel.findfriendbackend.service;
 
+import com.ariel.findfriendbackend.model.domain.Tag;
+
 import com.ariel.findfriendbackend.model.domain.User;
+import com.ariel.findfriendbackend.model.vo.TagVo;
 import com.baomidou.mybatisplus.extension.service.IService;
 
 import javax.servlet.http.HttpServletRequest;
@@ -56,5 +59,47 @@ public interface UserService extends IService<User> {
      * @return
      */
     List<User> getUserByTags(List<String> tagNameList);
+
+    /**
+     * 利用数据库查询
+     * @param tagNameList
+     * @return
+     */
     List<User> getUserByTagsSql(List<String> tagNameList);
+
+    /**
+     * 更新用户信息
+     * @param user
+     * @return
+     */
+    int updateUser(User user,User loginUser);
+
+    /**
+     * 获取当前用户
+     * @param request
+     * @return
+     */
+    User getLoginUser(HttpServletRequest request);
+
+    /**
+     * 判断权限
+     * @param request
+     * @return
+     */
+    boolean isAdmin(HttpServletRequest request);
+
+    /**
+     * 重载方法
+     * @param loginUser
+     * @return
+     */
+    boolean isAdmin(User loginUser);
+
+    /**
+     * 获取当前用户的标签
+     * @param currentId
+     * @param request
+     * @return
+     */
+    TagVo getTags(String currentId, HttpServletRequest request);
 }

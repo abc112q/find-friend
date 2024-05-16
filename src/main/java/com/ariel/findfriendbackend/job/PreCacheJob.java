@@ -51,7 +51,7 @@ public class PreCacheJob {
          */
         try {
             //如果获取到锁就执行定时任务写缓存
-            if(lock.tryLock(0,30000,TimeUnit.MILLISECONDS)){
+            if(lock.tryLock(0,-1,TimeUnit.MILLISECONDS)){
                 System.out.println("getLock: "+Thread.currentThread().getId());
                 for(Long userId:mainUserList){
                     QueryWrapper<User> queryWrapper = new QueryWrapper<>();

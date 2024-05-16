@@ -1,25 +1,25 @@
 package com.ariel.findfriendbackend.service.Impl;
 import com.ariel.findfriendbackend.common.ErrorCode;
+import com.ariel.findfriendbackend.contant.UserConstant;
 import com.ariel.findfriendbackend.exception.BusinessException;
 import com.ariel.findfriendbackend.mapper.UserMapper;
-import com.ariel.findfriendbackend.model.domain.Tag;
 import com.ariel.findfriendbackend.model.domain.User;
+import com.ariel.findfriendbackend.model.vo.TagVo;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.DigestUtils;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -41,10 +41,30 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
     @Resource
     private UserMapper userMapper;
 
+    @Resource
+    private RedisTemplate<String, Object> redisTemplate;
     /**
      * 盐值，混淆密码
      */
     private static final String SALT = "ariel";
+
+
+    /**
+     * 判断当前用户是否为管理员，需要通过请求获取当前用户信息
+     * @param request
+     * @return
+     */
+    @Override
+    public boolean isAdmin(HttpServletRequest request){
+        Object userObj =request.getSession().getAttribute(USER_LOGIN_STATE);
+        User user=(User)userObj;
+        return user != null&&user.getUserRole()== UserConstant.ADMIN_ROLE;
+    }
+
+    @Override
+    public boolean isAdmin(User loginUser){
+        return loginUser != null&&loginUser.getUserRole()==UserConstant.ADMIN_ROLE;
+    }
 
     /**
      * 用户注册
@@ -164,8 +184,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         safetyUser.setAvatarUrl(originUser.getAvatarUrl());
         safetyUser.setGender(originUser.getGender());
         safetyUser.setProfile(originUser.getProfile());
-//        safetyUser.setPhone(originUser.getPhone());
-//        safetyUser.setEmail(originUser.getEmail());
         // 脱敏处理电话号码，替换敏感信息
         safetyUser.setPhone(originUser.getPhone() != null ?
                 originUser.getPhone().replaceAll("(\\d{3})\\d{4}(\\d{4})", "$1****$2") : null);
@@ -196,6 +214,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
      * @return
      */
     @Override
+    // todo 不是应该遍历所有数据吗，那数据量大的时候从内存查询性能？？？而且这样分页也不行
     public List<User> getUserByTags(List<String> tagNameList){
         if(CollectionUtils.isEmpty(tagNameList)){
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
@@ -250,6 +269,143 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
        List<User> userList= userMapper.selectList(queryWrapper);
         return userList.stream().map(this::getSafetyUser).collect(Collectors.toList());
     }
+
+    @Override
+    public int updateUser(User user, User loginUser) {
+        long userId = user.getId();
+        if (userId <= 0) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        // 如果用户没有传任何要更新的值，就直接报错，不用执行 update 语句
+        if (user == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "不存在修改数据");
+        }
+        log.info(user.toString());
+        if (user.getPhone() != null && user.getPhone().length() != 11) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "电话长度过长或过短");
+        }
+        // 如果是管理员，允许更新任意用户
+        // 如果不是管理员，只允许更新当前（自己的）信息
+        log.info("loginUser:" + loginUser);
+        log.info("userId:" + userId);
+        if (!isAdmin(loginUser) && userId != loginUser.getId()) {
+            throw new BusinessException(ErrorCode.NO_AUTH);
+        }
+
+        User oldUser = userMapper.selectById(userId);
+        if (oldUser == null) {
+            throw new BusinessException(ErrorCode.NULL_ERROR);
+        }
+        return userMapper.updateById(user);
+    }
+
+    @Override
+    public User getLoginUser(HttpServletRequest request) {
+        if(request==null){
+            return null;
+        }
+        Object userObj =request.getSession().getAttribute(USER_LOGIN_STATE);
+        if(userObj==null){
+            throw new BusinessException(ErrorCode.NO_AUTH,"未登录");
+        }
+        return (User) userObj;
+}
+
+    /**
+     * 标签推荐，通过分析标签的出现频率
+     * @param id
+     * @param request
+     * @return
+     */
+    @Override
+    public TagVo getTags(String id, HttpServletRequest request) {
+        if (request == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        TagVo tagVo = new TagVo();
+        log.info("id:" + id);
+        String redisKey = String.format(USER_LOGIN_STATE + id);
+        ValueOperations<String, Object> valueOperations = redisTemplate.opsForValue();
+        User currentUser = (User) valueOperations.get(redisKey);
+        User userById = this.getById(currentUser.getId());
+        String OldTags = userById.getTags();
+        QueryWrapper<User> queryWrapper = new QueryWrapper<>();
+        queryWrapper.isNotNull("tags");
+        List<User> users = this.list(queryWrapper);
+        Map<String, Integer> map = new HashMap<>();
+        Gson gson = new Gson();
+        log.info(OldTags);
+        List<String> oldTags = gson.fromJson(OldTags, new TypeToken<List<String>>() {
+        }.getType());
+        log.info(oldTags.toString() + "");
+        for (User user : users) {
+            String Tags = user.getTags();
+            List<String> list = Arrays.asList(Tags);
+            if (list == null) {
+                continue;
+            }
+            List<String> tagList = gson.fromJson(Tags, new TypeToken<List<String>>() {
+            }.getType());
+            if (tagList != null) {
+                //命中一次tag+1
+                for (String tag : tagList) {
+                    if (map.get(tag) == null) {
+                        map.put(tag, 1);
+                    } else {
+                        map.put(tag, map.get(tag) + 1);
+                    }
+                }
+            }
+        }
+        Map<Integer, List<String>> Map = new TreeMap<>(new Comparator<Integer>() {
+            @Override
+            public int compare(Integer key1, Integer key2) {
+                //降序排序
+                return key2.compareTo(key1);
+            }
+        });
+        map.forEach((value, key) -> {
+            if (Map.size() == 0) {
+                Map.put(key, Arrays.asList(value));
+            } else if (Map.get(key) == null) {
+                Map.put(key, Arrays.asList(value));
+            } else {
+                List<String> list = new ArrayList(Map.get(key));
+                list.add(value);
+                Map.put(key, list);
+            }
+        });
+        Set<String> set = new HashSet<>();
+        for (Map.Entry<Integer, List<String>> entry : Map.entrySet()) {
+
+            log.info("set.size():"+set.size());
+            List<String> value = entry.getValue();
+            if (oldTags == null) {
+                for (String tag : value) {
+                    set.add(tag);
+                    if (set.size() >= 20) {
+                        break;
+                    }
+                }
+            }
+            for (String tag : value) {
+                if (!oldTags.contains(tag)) {
+                    set.add(tag);
+                    if (set.size() >= 20) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        List<String> RecommendTags = new ArrayList<String>(set);
+        log.info("RecommendTags:"+RecommendTags);
+        tagVo.setOldTags(oldTags);
+        tagVo.setRecommendTags(RecommendTags);
+        return tagVo;
+    }
+
+
 }
 
 

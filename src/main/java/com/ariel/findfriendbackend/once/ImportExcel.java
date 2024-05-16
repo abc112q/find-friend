@@ -15,7 +15,7 @@ public class ImportExcel {
      */
     public static void main(String[] args) {
         // todo 记得改为自己的测试文件
-        String fileName = "E:\\星球项目\\yupao-backend\\src\\main\\resources\\testExcel.xlsx";
+        String fileName = "";
 //        readByListener(fileName);
         synchronousRead(fileName);
     }
@@ -28,8 +28,6 @@ public class ImportExcel {
     public static void readByListener(String fileName) {
         EasyExcel.read(fileName, UserTableInfo.class, new TableListener()).sheet().doRead();
     }
-
-    // [加入我们](https://yupi.icu) 从 0 到 1 项目实战，经验拉满！10+ 原创项目手把手教程、7 日项目提升训练营、1000+ 项目经验笔记、60+ 编程经验分享直播
 
     /**
      * 同步读

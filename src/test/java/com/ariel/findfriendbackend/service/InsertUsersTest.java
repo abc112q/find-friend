@@ -67,18 +67,18 @@ public class InsertUsersTest {
     public void doConcurrentInsertUsers(){
         StopWatch stopWatch=new StopWatch();
         stopWatch.start();
-        int batchSize =1000;
+        int batchSize =10;
         //分10组
         int j=0;
         List<CompletableFuture<Void>> futureList =new ArrayList<>();
-        for(int i=0;i<100;i++){
+        for(int i=0;i<5;i++){
             List<User> userList = Collections.synchronizedList(new ArrayList<>());
 
             while(true){
                 j++;
                 User user=new User();
                 user.setUsername("测试用户");
-                user.setUserAccount("test4");
+                user.setUserAccount("test");
                 user.setAvatarUrl("https://picx.zhimg.com/v2-a2947e4762bb8badb9421423621435e6_r.jpg?source=1def8aca");
                 user.setGender(2);
                 user.setUserPassword("12345678");
@@ -86,8 +86,8 @@ public class InsertUsersTest {
                 user.setEmail("22222222@qq.com");
                 user.setUserStatus(0);
                 user.setUserRole(0);
-                user.setTags("test4");
-                user.setProfile("测试用户第4批");
+                user.setTags("[\"java\"]");
+                user.setProfile("测试用户");
                 userList.add(user);
                 if(j%batchSize==0){
                     break;
