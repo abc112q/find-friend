@@ -7,22 +7,24 @@ import com.ariel.findfriendbackend.dto.TeamQuery;
 import com.ariel.findfriendbackend.exception.BusinessException;
 import com.ariel.findfriendbackend.model.domain.Team;
 import com.ariel.findfriendbackend.model.domain.User;
-import com.ariel.findfriendbackend.model.enums.TeamStatusEnum;
-import com.ariel.findfriendbackend.model.request.TeamAddRequest;
+import com.ariel.findfriendbackend.model.domain.UserTeam;
+import com.ariel.findfriendbackend.model.request.*;
+import com.ariel.findfriendbackend.model.vo.TeamUserVo;
 import com.ariel.findfriendbackend.service.TeamService;
 import com.ariel.findfriendbackend.service.UserService;
+import com.ariel.findfriendbackend.service.UserTeamService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
-import java.util.Date;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * @author Ariel
@@ -38,6 +40,9 @@ public class TeamController {
 
     @Resource
     private TeamService teamService;
+
+    @Resource
+    private UserTeamService userTeamService;
 
     /**
      * 全局异常处理和拦截器进行权限校验的区别
@@ -58,27 +63,51 @@ public class TeamController {
     }
 
     @PostMapping("/delete")
-    public BaseResponse<Boolean> deleteTeam(Long id){
-        if(id<=0){
+    public BaseResponse<Boolean> deleteTeam(@RequestBody DeleteRequest deleteRequest, HttpServletRequest request) {
+        if (deleteRequest == null || deleteRequest.getId() <= 0) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
-        boolean result= teamService.removeById(id);
-        if(!result){
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR,"删除失败");
+        long id = deleteRequest.getId();
+        User loginUser = userService.getLoginUser(request);
+        boolean result = teamService.deleteTeam(id, loginUser);
+        if (!result) {
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "删除失败");
         }
         return ResultUtils.success(true);
     }
 
+
     @PostMapping("/update")
-    public BaseResponse<Boolean> updateTeam(@RequestBody Team team){
-        if(team==null){
+    public BaseResponse<Boolean> updateTeam(@RequestBody TeamUpdateRequest teamUpdateRequest,HttpServletRequest request){
+        if(teamUpdateRequest==null){
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
-        boolean result= teamService.updateById(team);
+        User loginUser=userService.getLoginUser(request);
+        boolean result= teamService.updateTeam(teamUpdateRequest,loginUser);
         if(!result){
             throw new BusinessException(ErrorCode.SYSTEM_ERROR,"更新失败");
         }
         return ResultUtils.success(true);
+    }
+
+    @PostMapping("/join")
+    public BaseResponse<Boolean> joinTeam(@RequestBody TeamJoinRequest teamJoinRequest,HttpServletRequest request){
+       if(teamJoinRequest ==null){
+           throw new BusinessException(ErrorCode.PARAMS_ERROR);
+       }
+       User loginUser=userService.getLoginUser(request);
+       boolean result =teamService.joinTeam(teamJoinRequest,loginUser);
+       return ResultUtils.success(result);
+    }
+
+    @PostMapping("/quit")
+    public BaseResponse<Boolean> quitTeam(@RequestBody TeamQuitRequest teamQuitRequest, HttpServletRequest request){
+        if(teamQuitRequest ==null){
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        User loginUser=userService.getLoginUser(request);
+        boolean result =teamService.quitTeam(teamQuitRequest,loginUser);
+        return ResultUtils.success(result);
     }
 
     /**
@@ -104,18 +133,15 @@ public class TeamController {
      * @return
      */
     @GetMapping("/list")
-    public BaseResponse<List<Team>> listTeams(TeamQuery teamQuery){
+    public BaseResponse<List<TeamUserVo>> listTeams(TeamQuery teamQuery,HttpServletRequest request){
         if(teamQuery==null){
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
-        Team team=new Team();
-        //把一个对象的字段全部复制到另一个对象，避免使用大量set/get方法,因为返回的方法只接受Team泛型
-        BeanUtils.copyProperties(teamQuery,team);
-        QueryWrapper<Team> queryWrapper=new QueryWrapper<>(team);
-        List<Team> teamList =teamService.list(queryWrapper);
+        //todo 查询队伍可以未登录 加入队伍必须提示登录
+        boolean isAdmin=userService.isAdmin(request);
+        List<TeamUserVo> teamList =teamService.listTeams(teamQuery,isAdmin);
         return ResultUtils.success(teamList);
     }
-
     /**
      * 分页查询
      * @param teamQuery
@@ -133,5 +159,46 @@ public class TeamController {
         QueryWrapper<Team> queryWrapper=new QueryWrapper<>(team);
         Page<Team> teamPage =teamService.page(page,queryWrapper);
         return ResultUtils.success(teamPage);
+    }
+
+    /**
+     * 获取我创建的队伍，直接根据当前用户的id搜索队伍展示
+     * @param teamQuery
+     * @param request
+     * @return
+     */
+    @GetMapping("/list/my/create")
+    public BaseResponse<List<TeamUserVo>> listMyCreateTeams(TeamQuery teamQuery,HttpServletRequest request){
+        if(teamQuery==null){
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        User loginUser=userService.getLoginUser(request);
+        teamQuery.setUserId(loginUser.getId());
+        List<TeamUserVo> teamList =teamService.listTeams(teamQuery,true);
+        return ResultUtils.success(teamList);
+    }
+
+    /**
+     * 获取我加入的队伍，直接根据当前用户的id搜索队伍展示 查关系表
+     * @param teamQuery
+     * @param request
+     * @return
+     */
+    @GetMapping("/list/my/join")
+    public BaseResponse<List<TeamUserVo>> listMyJoinTeams(TeamQuery teamQuery,HttpServletRequest request){
+        if(teamQuery==null){
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        User loginUser=userService.getLoginUser(request);
+        QueryWrapper<UserTeam> queryWrapper=new QueryWrapper<>();
+        queryWrapper.eq("userId",loginUser.getId());
+        List<UserTeam> userTeamList =userTeamService.list(queryWrapper);
+        //取出不重复的teamId,但其实不会重复，严谨一点还是去重  （根据teamId分组）
+        Map<Long,List<UserTeam>> listMap =userTeamList.stream()
+                .collect(Collectors.groupingBy(UserTeam::getTeamId));
+        List<Long> idList= new ArrayList<>(listMap.keySet());
+        teamQuery.setIdList(idList);
+        List<TeamUserVo> teamList =teamService.listTeams(teamQuery,true);
+        return ResultUtils.success(teamList);
     }
 }
